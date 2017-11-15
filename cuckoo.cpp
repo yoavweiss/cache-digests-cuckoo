@@ -57,6 +57,62 @@ void Cuckoo::add(unsigned char* digest, std::string URL, std::string ETag, unsig
     printf("ERROR - maxcount reached\n");
 }
 
+bool Cuckoo::query(const unsigned char* digest, std::string URL, std::string ETag) {
+    unsigned fingerprintSize = digest[0];
+    unsigned long entries = bigEndianRead(digest, 1, 4);
+    std::string keyStr = key(URL, ETag);
+    unsigned long h1 = hash(keyStr, entries);
+    unsigned long destinationFingerprintValue = fingerprint(keyStr, fingerprintSize);
+    char fingerprintString[20];
+    sprintf((char*)fingerprintString, "%lu", destinationFingerprintValue);
+    unsigned long h2 = hash(std::string(fingerprintString), entries) ^ h1;
+    unsigned long hashes[2];
+    hashes[0] = h1;
+    hashes[1] = h2;
+    for (int i = 0; i < 2; ++i) {
+        unsigned long h = hashes[i];
+        unsigned positionStart = 40 + h * fingerprintSize * BucketSize;
+        unsigned positionEnd = positionStart + fingerprintSize * BucketSize;
+        unsigned long fingerprintValue;
+        while (positionStart < positionEnd) {
+            fingerprintValue = readFingerprint(digest, positionStart, fingerprintSize);
+            if (fingerprintValue == destinationFingerprintValue) {
+                return true;
+            }
+            positionStart += fingerprintSize;
+        }
+    }
+    return false;
+}
+
+void Cuckoo::remove(unsigned char* digest, std::string URL, std::string ETag) {
+    unsigned fingerprintSize = digest[0];
+    unsigned long entries = bigEndianRead(digest, 1, 4);
+    std::string keyStr = key(URL, ETag);
+    unsigned long h1 = hash(keyStr, entries);
+    unsigned long destinationFingerprintValue = fingerprint(keyStr, fingerprintSize);
+    char fingerprintString[20];
+    sprintf((char*)fingerprintString, "%lu", destinationFingerprintValue);
+    unsigned long h2 = hash(std::string(fingerprintString), entries) ^ h1;
+    unsigned long hashes[2];
+    hashes[0] = h1;
+    hashes[1] = h2;
+    for (int i = 0; i < 2; ++i) {
+        unsigned long h = hashes[i];
+        unsigned positionStart = 40 + h * fingerprintSize * BucketSize;
+        unsigned positionEnd = positionStart + fingerprintSize * BucketSize;
+        unsigned long fingerprintValue;
+        while (positionStart < positionEnd) {
+            fingerprintValue = readFingerprint(digest, positionStart, fingerprintSize);
+            if (fingerprintValue == destinationFingerprintValue) {
+                writeFingerprint(digest, positionStart, fingerprintSize, 0);
+                return;
+            }
+            positionStart += fingerprintSize;
+        }
+    }
+}
+
 void Cuckoo::bigEndianWrite(unsigned char* digest, unsigned startPosition, size_t length, unsigned long number) {
     const unsigned long digit = 0xff;
     for (int i = length - 1; i >= 0; --i) {
@@ -150,6 +206,7 @@ void Cuckoo::writeFingerprint(unsigned char* hash, unsigned positionInBits, unsi
     bigEndianWrite(hash, startPositionInBytes, lengthInBytes, hashValue);
 }
 
+// !!! Test only code from here on out !!!
 unsigned char hex(unsigned char input) {
     if (input >= '0' && input <= '9')
         return input - '0';
