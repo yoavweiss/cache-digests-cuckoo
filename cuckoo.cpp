@@ -10,30 +10,58 @@ Cuckoo::Cuckoo(unsigned probability, unsigned entries) {
     assert(probability < 256);
     assert(entries < pow(2,32));
 
-    unsigned fingerprintSize = probability + 3;
+    unsigned fingerprintSize = ceil(log2(probability)) + 3;
     unsigned bytes = ceil((float)(fingerprintSize * entries * BucketSize) / 8.0);
     bytes += 5;
-    m_digest = new char[bytes];
+    m_digest = new unsigned char[bytes];
     m_digestSize = bytes;
     memset(m_digest, 0, bytes);
-    m_digest[0] = (char)probability;
+    m_digest[0] = (char)fingerprintSize;
     bigEndianWrite(m_digest, 1, 4, entries);
 }
+
 Cuckoo::~Cuckoo() {
     delete m_digest;
 }
 
-void Cuckoo::add(std::string URL, std::string ETag, unsigned maxcount) {
-    unsigned fingerprintSize = m_digest[0];
-    unsigned long entries = bigEndianRead((const unsigned char*)m_digest, 1, 4);
+void Cuckoo::add(unsigned char* digest, std::string URL, std::string ETag, unsigned maxcount) {
+    unsigned fingerprintSize = digest[0];
+    unsigned long entries = bigEndianRead(digest, 1, 4);
+    std::string keyStr = key(URL, ETag);
+    unsigned long h1 = hash(keyStr, entries);
+    unsigned long destinationFingerprintValue = fingerprint(keyStr, fingerprintSize);
+    char fingerprintString[20];
 
+    while (maxcount) {
+        sprintf((char*)fingerprintString, "%lu", destinationFingerprintValue);
+        unsigned long h2 = hash(std::string(fingerprintString), entries) ^ h1;
+        int randomNumber = rand() % 2;
+        unsigned long h = (randomNumber != 0) ? h1 : h2;
+        unsigned positionStart = 40 + h * fingerprintSize * BucketSize;
+        unsigned positionEnd = positionStart + fingerprintSize * BucketSize;
+        unsigned long fingerprintValue;
+        while (positionStart < positionEnd) {
+            fingerprintValue = readFingerprint(digest, positionStart, fingerprintSize);
+            if (fingerprintValue == 0) {
+                writeFingerprint(digest, positionStart, fingerprintSize, destinationFingerprintValue);
+                return;
+            }
+            positionStart += fingerprintSize;
+        }
+        --maxcount;
+        positionStart -= fingerprintSize;
+        writeFingerprint(digest, positionStart, fingerprintSize, destinationFingerprintValue);
+        destinationFingerprintValue = fingerprintValue;
+        h1 = h;
+    }
+    printf("ERROR - maxcount reached\n");
 }
 
-void Cuckoo::bigEndianWrite(char* digest, unsigned startPosition, size_t length, unsigned long number) {
+void Cuckoo::bigEndianWrite(unsigned char* digest, unsigned startPosition, size_t length, unsigned long number) {
     const unsigned long digit = 0xff;
     for (int i = length - 1; i >= 0; --i) {
         unsigned long temp = number & digit;
-        digest[startPosition + i] = temp;
+        digest[startPosition + i] = (unsigned char)temp;
         number >>= 8;
     }
 }
@@ -69,23 +97,24 @@ unsigned Cuckoo::hash(std::string key, unsigned entries) {
 }
 
 unsigned long Cuckoo::fingerprint(std::string key, unsigned fingerprintSize) {
+    assert(fingerprintSize > 0);
     unsigned char hash[SHA256_DIGEST_LENGTH];
     SHA256_CTX sha256;
     SHA256_Init(&sha256);
     SHA256_Update(&sha256, key.c_str(), key.size());
     SHA256_Final(hash, &sha256);
-    unsigned long fingerprint;
+    unsigned long fingerprintValue;
     for (unsigned i = SHA256_DIGEST_LENGTH * 8 - fingerprintSize; i >= fingerprintSize; i -= fingerprintSize) {
-        fingerprint = readFingerprint((char*)hash, SHA256_DIGEST_LENGTH, i, fingerprintSize);
-        if (fingerprint != 0)
+        fingerprintValue = readFingerprint(hash, i, fingerprintSize);
+        if (fingerprintValue != 0)
             break;
     }
-    if (fingerprint == 0)
-        fingerprint = 1;
-    return fingerprint;
+    if (fingerprintValue == 0)
+        fingerprintValue = 1;
+    return fingerprintValue;
 }
 
-unsigned long Cuckoo::readFingerprint(const char* hash, unsigned length, unsigned positionInBits, unsigned fingerprintSizeInBits) {
+unsigned long Cuckoo::readFingerprint(const unsigned char* hash, unsigned positionInBits, unsigned fingerprintSizeInBits) {
     const float Bits = 8.0;
     unsigned endPositionInBits = positionInBits + fingerprintSizeInBits;
     unsigned startPositionInBytes = floor((float)positionInBits / Bits);
@@ -99,6 +128,26 @@ unsigned long Cuckoo::readFingerprint(const char* hash, unsigned length, unsigne
     hashValue <<= extraBytes * (unsigned)Bits + extraBitsAtStart;
     hashValue >>= extraBytes * (unsigned)Bits + extraBitsAtStart + extraBitsAtEnd;
     return hashValue;
+}
+
+void Cuckoo::writeFingerprint(unsigned char* hash, unsigned positionInBits, unsigned fingerprintSizeInBits, unsigned long fingerprintValue) {
+    const float Bits = 8.0;
+    unsigned endPositionInBits = positionInBits + fingerprintSizeInBits;
+    unsigned startPositionInBytes = floor((float)positionInBits / Bits);
+    unsigned endPositionInBytes = ceil((float)endPositionInBits / Bits);
+    unsigned lengthInBytes = endPositionInBytes - startPositionInBytes;
+    unsigned long hashValue = bigEndianRead((const unsigned char *)(hash), startPositionInBytes, lengthInBytes);
+    unsigned extraBitsAtStart = positionInBits - startPositionInBytes * Bits;
+    unsigned extraBitsAtEnd = endPositionInBytes * Bits - endPositionInBits;
+    unsigned extraBytes = sizeof(hashValue) - lengthInBytes;
+    unsigned long bitmap = -1;
+    bitmap >>= extraBitsAtEnd + fingerprintSizeInBits;
+    bitmap <<= extraBitsAtEnd + fingerprintSizeInBits;
+    bitmap += (unsigned)(pow(2, extraBitsAtEnd)) - 1;
+    hashValue &= bitmap;
+    fingerprintValue <<= extraBitsAtEnd;
+    hashValue |= fingerprintValue;
+    bigEndianWrite(hash, startPositionInBytes, lengthInBytes, hashValue);
 }
 
 unsigned char hex(unsigned char input) {
@@ -121,32 +170,41 @@ void Cuckoo::runTests() {
         printf("Fail - hashNumber %lu", hashNumber);
     }
     // Test bigEndianWrite
-    char testDigest[10];
+    unsigned char testDigest[10];
     testDigest[0] = 49;
     bigEndianWrite(testDigest, 1, 4, 842216501);
     testDigest[5] = 0;
-    if (testDigest != std::string("12345")) {
+    if ((char*)testDigest != std::string("12345")) {
         printf("Fail - bigEndianWrite got %s\n", testDigest);
     }
     // Test readFingerprint
     hashStr = "0123456789abcdef";
-    char fingerprintHash[16];
-    strncpy(fingerprintHash, hashStr.c_str(), 16);
-    unsigned long fingerprintValue = readFingerprint(fingerprintHash, 16, 121, 7);
+    unsigned char fingerprintHash[17];
+    fingerprintHash[16] = 0;
+    strncpy((char*)fingerprintHash, hashStr.c_str(), 16);
+    unsigned long fingerprintValue = readFingerprint(fingerprintHash, 121, 7);
     if (fingerprintValue != 102)
         printf("FAIL - readFingerprint %lu\n", fingerprintValue);
-    fingerprintValue = readFingerprint(fingerprintHash, 16, 117, 7);
+    fingerprintValue = readFingerprint(fingerprintHash, 117, 7);
     if (fingerprintValue!= 86)
         printf("FAIL - readFingerprint %lu\n", fingerprintValue);
     char shaInStr[65] = "2442a9b40768c5ccff9366514374eeca86fd6a3156b11d5f7aaad7b1e3fbbb08";
-    char fingerprintHash2[32];
+    unsigned char fingerprintHash2[32];
     for (int i = 0; i < 32; ++i) {
         unsigned char letter = hex(shaInStr[2*i]) * 16 + hex(shaInStr[2*i+1]);
         fingerprintHash2[i] = letter;
     }
-    fingerprintValue = readFingerprint(fingerprintHash2, 32, 247, 9);
+    fingerprintValue = readFingerprint(fingerprintHash2, 247, 9);
     if (fingerprintValue!= 264)
         printf("FAIL - readFingerprint %lu\n", fingerprintValue);
+
+
+    // Test writeFingerprint
+    writeFingerprint(fingerprintHash, 8, 8, 90);
+    writeFingerprint(fingerprintHash, 20, 4, 5);
+    writeFingerprint(fingerprintHash, 28, 3, 6);
+    if (strcmp((const char*)fingerprintHash, "0Z5=456789abcdef"))
+        printf("FAIL - writeFingerprint %s\n", fingerprintHash);
 
     // Test hash calculation
     std::string keyStr = key("https://example.com/bla.gif", "34bfac");
