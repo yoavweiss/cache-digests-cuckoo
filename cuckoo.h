@@ -10,20 +10,20 @@ public:
     ~Cuckoo();
     const char* getDigest();
 
-    void add(std::string URL, std::string ETag, unsigned maxcount);
-    void remove(std::string URL, std::string ETag);
-    bool query(std::string URL, std::string ETag);
+    static void add(char* digest, std::string URL, std::string ETag, unsigned maxcount);
+    static void remove(char* digest, std::string URL, std::string ETag);
+    static bool query(const char* digest, std::string URL, std::string ETag);
 
     // For testing only
     void runTests();
 private:
 
-    unsigned long fingerprint(std::string key, unsigned fingerprintSize);
-    unsigned hash(std::string key, unsigned entries);
-    std::string key(std::string URL, std::string ETag);
+    static unsigned long fingerprint(std::string key, unsigned fingerprintSize);
+    static unsigned hash(std::string key, unsigned entries);
+    static std::string key(std::string URL, std::string ETag);
     static void bigEndianWrite(char* digest, unsigned startPosition, size_t length, unsigned long number);
-    unsigned long bigEndianRead(const unsigned char* digest, unsigned startPosition, size_t length);
-    unsigned long readFingerprint(const char* hash, unsigned length, unsigned positionInBits, unsigned fingerprintSizeInBits);
+    static unsigned long bigEndianRead(const unsigned char* digest, unsigned startPosition, size_t length);
+    static unsigned long readFingerprint(const char* hash, unsigned length, unsigned positionInBits, unsigned fingerprintSizeInBits);
 
     char* m_digest;
     size_t m_digestSize;
