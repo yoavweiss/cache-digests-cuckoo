@@ -6,14 +6,14 @@
 class Cuckoo {
 
 public:
-    Cuckoo(unsigned probability, unsigned entries);
+    Cuckoo(unsigned probability, unsigned entries, int maxCount);
     ~Cuckoo();
     unsigned char* getDigest() { return m_digest; }
     size_t getDigestSize() { return m_digestSize; }
 
-    static unsigned add(unsigned char* digest, size_t digestSize, std::string URL, std::string ETag, unsigned maxcount);
-    static void remove(unsigned char* digest, size_t digestSize, std::string URL, std::string ETag);
-    static bool query(const unsigned char* digest, size_t digestSize, std::string URL, std::string ETag);
+    unsigned add(std::string URL, std::string ETag);
+    void remove(std::string URL, std::string ETag);
+    bool query(std::string URL, std::string ETag);
 
     // For testing only
     void runTests();
@@ -29,6 +29,8 @@ private:
 
     unsigned char* m_digest;
     size_t m_digestSize;
+    //* `maxcount` - max number of cuckoo hops
+    int m_maxCount;
     // Let `b` be the bucket size, defined as 4.
     static const size_t BucketSize = 4;
 

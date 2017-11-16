@@ -3,14 +3,14 @@
 #include <vector>
 
 int main() {
+    const unsigned MaxCount = 500;
 
     // Create a digest
-    Cuckoo cuckoo(8, 2039);
+    Cuckoo cuckoo(8, 2039, MaxCount);
 
     // Run a set of sanity tests
     cuckoo.runTests();
 
-    const unsigned MaxCount = 500;
     unsigned char* digest = cuckoo.getDigest();
     size_t digestSize = cuckoo.getDigestSize();
 
@@ -24,7 +24,7 @@ int main() {
     infile.close();
     unsigned minmaxcount = 500;
     for (auto& url : urls) {
-        unsigned maxcount = Cuckoo::add(cuckoo.getDigest(), cuckoo.getDigestSize(), url, std::string(), MaxCount);
+        unsigned maxcount = cuckoo.add(url, std::string());
         if (maxcount < minmaxcount)
             minmaxcount = maxcount;
     }
@@ -40,19 +40,18 @@ int main() {
 
     // Get a list of URLs from chrome://cache and query to see they're in the digest
     for (auto& url : urls) {
-        if (!Cuckoo::query(cuckoo.getDigest(), cuckoo.getDigestSize(), url, std::string()))
+        if (!cuckoo.query(url, std::string()))
             printf("FAIL - %s is not in the digest\n", url.c_str());
     }
-    if (Cuckoo::query(cuckoo.getDigest(), cuckoo.getDigestSize(), "blabla", std::string()))
+    if (cuckoo.query("blabla", std::string()))
         printf("FAIL - blabla should not be in the digest\n");
 
     // Remove from the digest
     for (auto& url : urls) {
-        Cuckoo::remove(cuckoo.getDigest(), cuckoo.getDigestSize(), url, std::string());
+        cuckoo.remove(url, std::string());
     }
     for (auto& url : urls) {
-        if (Cuckoo::query(cuckoo.getDigest(), cuckoo.getDigestSize(), url, std::string()))
+        if (cuckoo.query(url, std::string()))
             printf("FAIL - %s is still in the digest\n", url.c_str());
     }
-
 }

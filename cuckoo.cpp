@@ -6,7 +6,7 @@
 #include <openssl/sha.h>
 
 // ### Creating a digest {#creating}
-Cuckoo::Cuckoo(unsigned probability, unsigned entries) {
+Cuckoo::Cuckoo(unsigned probability, unsigned entries, int maxCount) {
     // Given the following inputs:
     // * `P`, an integer smaller than 256, that indicates the probability of a false positive that is acceptable, expressed as `1/2\*\*P`.
     // * `N`, an integer that represents the number of entries - a prime number smaller than 2\*\*32
@@ -25,13 +25,15 @@ Cuckoo::Cuckoo(unsigned probability, unsigned entries) {
     bytes += 5;
     // 6. Allocate memory of `bytes` and set it to zero. Assign it to `digest-value`.
     m_digest = new unsigned char[bytes];
-    m_digestSize = bytes;
     memset(m_digest, 0, bytes);
 
     // 7. Set the first byte to `P`
     m_digest[0] = (char)fingerprintSize;
     // 8. Set the second till fifth bytes to `N` in big endian form
     bigEndianWrite(m_digest, 1, 4, entries);
+
+    m_digestSize = bytes;
+    m_maxCount = maxCount;
 }
 
 Cuckoo::~Cuckoo() {
@@ -39,7 +41,7 @@ Cuckoo::~Cuckoo() {
 }
 
 // ### Adding a URL to the Digest-Value {#adding}
-unsigned Cuckoo::add(unsigned char* digest, size_t digestSize, std::string URL, std::string ETag, unsigned maxcount) {
+unsigned Cuckoo::add(std::string URL, std::string ETag) {
     //Given the following inputs:
     //
     //* `URL` a string corresponding to the Effective Request URI ({{RFC7230}}, Section 5.5) of a cached
@@ -48,6 +50,9 @@ unsigned Cuckoo::add(unsigned char* digest, size_t digestSize, std::string URL, 
     //the ETag is available; otherwise, null);
     //* `maxcount` - max number of cuckoo hops
     //* `digest-value`
+    int maxCount = m_maxCount;
+    unsigned char* digest = m_digest;
+    size_t digestSize = m_digestSize;
 
     // 1. Let `f` be the value of the first byte of `digest-value`.
     unsigned fingerprintSize = digest[0];
@@ -60,7 +65,7 @@ unsigned Cuckoo::add(unsigned char* digest, size_t digestSize, std::string URL, 
     // 6. Let `fingerprint` be the return value of {{fingerprint}} with `key` and `f` as inputs.
     unsigned long destinationFingerprintValue = fingerprint(keyStr, fingerprintSize);
     char fingerprintString[20];
-    while (maxcount) {
+    while (maxCount) {
         // 7. Let `fingerprint-string` be the value of `fingerprint` in base 10, expressed as a string.
         sprintf((char*)fingerprintString, "%lu", destinationFingerprintValue);
         // 8. Let `h2` be the return value of {{hash}} with `fingerprint-string` and `N` as inputs, XORed with `h1`.
@@ -83,7 +88,7 @@ unsigned Cuckoo::add(unsigned char* digest, size_t digestSize, std::string URL, 
             // 2. If `bits` is all zeros, set `bits` to `fingerprint` and terminate these steps.
             if (fingerprintValue == 0) {
                 writeFingerprint(digest, positionStart, fingerprintSize, destinationFingerprintValue);
-                return maxcount;
+                return maxCount;
             }
             // 3. Add `f` to `position_start`.
             positionStart += fingerprintSize;
@@ -96,7 +101,7 @@ unsigned Cuckoo::add(unsigned char* digest, size_t digestSize, std::string URL, 
         // 15. Let `h1` be `h`
         h1 = h;
         // 16. Substract 1 from `maxcount`.
-        --maxcount;
+        --maxCount;
         // 17. If `maxcount` is zero, return an error.
         // 18. Go to step 7.
     }
@@ -105,7 +110,7 @@ unsigned Cuckoo::add(unsigned char* digest, size_t digestSize, std::string URL, 
 }
 
 // ### Querying the Digest for a Value {#querying}
-bool Cuckoo::query(const unsigned char* digest, size_t digestSize, std::string URL, std::string ETag) {
+bool Cuckoo::query(std::string URL, std::string ETag) {
     //Given the following inputs:
     //
     //* `URL` a string corresponding to the Effective Request URI ({{RFC7230}}, Section 5.5) of a cached
@@ -113,6 +118,8 @@ bool Cuckoo::query(const unsigned char* digest, size_t digestSize, std::string U
     //* `ETag` a string corresponding to the entity-tag {{RFC7232}} of a cached response {{RFC7234}} (if
     //the ETag is available; otherwise, null).
     //* `digest-value`, an array of bits.
+    const unsigned char* digest = m_digest;
+    size_t digestSize = m_digestSize;
 
     // 1. Let `f` be the value of the first byte of `digest-value`.
     unsigned fingerprintSize = digest[0];
@@ -160,7 +167,7 @@ bool Cuckoo::query(const unsigned char* digest, size_t digestSize, std::string U
 }
 
 // ### Removing a URL to the Digest-Value {#removing}
-void Cuckoo::remove(unsigned char* digest, size_t digestSize, std::string URL, std::string ETag) {
+void Cuckoo::remove(std::string URL, std::string ETag) {
     // Given the following inputs:
     //
     // * `URL` a string corresponding to the Effective Request URI ({{RFC7230}}, Section 5.5) of a cached
@@ -168,6 +175,8 @@ void Cuckoo::remove(unsigned char* digest, size_t digestSize, std::string URL, s
     // * `ETag` a string corresponding to the entity-tag {{RFC7232}} of a cached response {{RFC7234}} (if
     // the ETag is available; otherwise, null);
     // * `digest-value`
+    unsigned char* digest = m_digest;
+    size_t digestSize = m_digestSize;
 
     // 1. Let `f` be the value of the first byte of `digest-value`.
     unsigned fingerprintSize = digest[0];
