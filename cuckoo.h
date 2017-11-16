@@ -29,6 +29,7 @@ private:
 
     unsigned char* m_digest;
     size_t m_digestSize;
+    // Let `b` be the bucket size, defined as 4.
     static const size_t BucketSize = 4;
 
 
