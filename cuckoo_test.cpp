@@ -5,7 +5,7 @@
 int main() {
 
     // Create a digest
-    Cuckoo cuckoo(256, 2503);
+    Cuckoo cuckoo(8, 2039);
 
     // Run a set of sanity tests
     cuckoo.runTests();
@@ -22,9 +22,14 @@ int main() {
         urls.push_back(url);
     }
     infile.close();
+    unsigned minmaxcount = 500;
     for (auto& url : urls) {
-        Cuckoo::add(cuckoo.getDigest(), url, std::string(), MaxCount);
+        unsigned maxcount = Cuckoo::add(cuckoo.getDigest(), cuckoo.getDigestSize(), url, std::string(), MaxCount);
+        if (maxcount < minmaxcount)
+            minmaxcount = maxcount;
     }
+    printf("Maximum cucko pushes %u\n", MaxCount - minmaxcount);
+
     // Write the digest to disk
     std::ofstream outfile;
     outfile.open("digest.bin", std::ios::binary);
@@ -32,17 +37,21 @@ int main() {
         outfile.write((const char*)cuckoo.getDigest(), cuckoo.getDigestSize());
         outfile.close();
     }
+
     // Get a list of URLs from chrome://cache and query to see they're in the digest
     for (auto& url : urls) {
-        if (!Cuckoo::query(cuckoo.getDigest(), url, std::string()))
+        if (!Cuckoo::query(cuckoo.getDigest(), cuckoo.getDigestSize(), url, std::string()))
             printf("FAIL - %s is not in the digest\n", url.c_str());
     }
-    if (Cuckoo::query(cuckoo.getDigest(), "blabla", std::string()))
+    if (Cuckoo::query(cuckoo.getDigest(), cuckoo.getDigestSize(), "blabla", std::string()))
         printf("FAIL - blabla should not be in the digest\n");
+
     // Remove from the digest
     for (auto& url : urls) {
-        Cuckoo::remove(cuckoo.getDigest(), url, std::string());
-        if (Cuckoo::query(cuckoo.getDigest(), url, std::string()))
+        Cuckoo::remove(cuckoo.getDigest(), cuckoo.getDigestSize(), url, std::string());
+    }
+    for (auto& url : urls) {
+        if (Cuckoo::query(cuckoo.getDigest(), cuckoo.getDigestSize(), url, std::string()))
             printf("FAIL - %s is still in the digest\n", url.c_str());
     }
 

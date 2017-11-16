@@ -11,9 +11,9 @@ public:
     unsigned char* getDigest() { return m_digest; }
     size_t getDigestSize() { return m_digestSize; }
 
-    static void add(unsigned char* digest, std::string URL, std::string ETag, unsigned maxcount);
-    static void remove(unsigned char* digest, std::string URL, std::string ETag);
-    static bool query(const unsigned char* digest, std::string URL, std::string ETag);
+    static unsigned add(unsigned char* digest, size_t digestSize, std::string URL, std::string ETag, unsigned maxcount);
+    static void remove(unsigned char* digest, size_t digestSize, std::string URL, std::string ETag);
+    static bool query(const unsigned char* digest, size_t digestSize, std::string URL, std::string ETag);
 
     // For testing only
     void runTests();

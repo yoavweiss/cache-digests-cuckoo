@@ -1,4 +1,5 @@
 *.txt
 *.bin
 *.gz
+*.dSYM
 cuckoo

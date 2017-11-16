@@ -1,5 +1,4 @@
 #include "cuckoo.h"
-#define NDEBUG
 #include <cassert>
 #include <math.h>
 #include <cstring>
@@ -10,8 +9,11 @@ Cuckoo::Cuckoo(unsigned probability, unsigned entries) {
     assert(probability < 256);
     assert(entries < pow(2,32));
 
-    unsigned fingerprintSize = ceil(log2(probability)) + 3;
-    unsigned bytes = ceil((float)(fingerprintSize * entries * BucketSize) / 8.0);
+    unsigned fingerprintSize = probability + 3;
+    unsigned logEntries = ceil(log2(entries));
+    // We allocate a larger number of entries because the XOR operation makes it so h2 can be up to the next power of 2.
+    unsigned allocationEntries = (unsigned)pow(2, logEntries);
+    unsigned bytes = ceil((float)(fingerprintSize * allocationEntries * BucketSize) / 8.0);
     bytes += 5;
     m_digest = new unsigned char[bytes];
     m_digestSize = bytes;
@@ -24,7 +26,7 @@ Cuckoo::~Cuckoo() {
     delete m_digest;
 }
 
-void Cuckoo::add(unsigned char* digest, std::string URL, std::string ETag, unsigned maxcount) {
+unsigned Cuckoo::add(unsigned char* digest, size_t digestSize, std::string URL, std::string ETag, unsigned maxcount) {
     unsigned fingerprintSize = digest[0];
     unsigned long entries = bigEndianRead(digest, 1, 4);
     std::string keyStr = key(URL, ETag);
@@ -34,17 +36,19 @@ void Cuckoo::add(unsigned char* digest, std::string URL, std::string ETag, unsig
 
     while (maxcount) {
         sprintf((char*)fingerprintString, "%lu", destinationFingerprintValue);
-        unsigned long h2 = hash(std::string(fingerprintString), entries) ^ h1;
+        unsigned long h2 = hash(std::string(fingerprintString), entries);
+        h2 ^= h1;
         int randomNumber = rand() % 2;
         unsigned long h = (randomNumber != 0) ? h1 : h2;
         unsigned positionStart = 40 + h * fingerprintSize * BucketSize;
         unsigned positionEnd = positionStart + fingerprintSize * BucketSize;
+        assert(ceil(positionEnd / 8) <= digestSize);
         unsigned long fingerprintValue;
         while (positionStart < positionEnd) {
             fingerprintValue = readFingerprint(digest, positionStart, fingerprintSize);
             if (fingerprintValue == 0) {
                 writeFingerprint(digest, positionStart, fingerprintSize, destinationFingerprintValue);
-                return;
+                return maxcount;
             }
             positionStart += fingerprintSize;
         }
@@ -55,9 +59,10 @@ void Cuckoo::add(unsigned char* digest, std::string URL, std::string ETag, unsig
         h1 = h;
     }
     printf("ERROR - maxcount reached\n");
+    return 0;
 }
 
-bool Cuckoo::query(const unsigned char* digest, std::string URL, std::string ETag) {
+bool Cuckoo::query(const unsigned char* digest, size_t digestSize, std::string URL, std::string ETag) {
     unsigned fingerprintSize = digest[0];
     unsigned long entries = bigEndianRead(digest, 1, 4);
     std::string keyStr = key(URL, ETag);
@@ -74,6 +79,7 @@ bool Cuckoo::query(const unsigned char* digest, std::string URL, std::string ETa
         unsigned positionStart = 40 + h * fingerprintSize * BucketSize;
         unsigned positionEnd = positionStart + fingerprintSize * BucketSize;
         unsigned long fingerprintValue;
+        assert(ceil(positionStart / 8) <= digestSize);
         while (positionStart < positionEnd) {
             fingerprintValue = readFingerprint(digest, positionStart, fingerprintSize);
             if (fingerprintValue == destinationFingerprintValue) {
@@ -85,7 +91,7 @@ bool Cuckoo::query(const unsigned char* digest, std::string URL, std::string ETa
     return false;
 }
 
-void Cuckoo::remove(unsigned char* digest, std::string URL, std::string ETag) {
+void Cuckoo::remove(unsigned char* digest, size_t digestSize, std::string URL, std::string ETag) {
     unsigned fingerprintSize = digest[0];
     unsigned long entries = bigEndianRead(digest, 1, 4);
     std::string keyStr = key(URL, ETag);
@@ -102,6 +108,7 @@ void Cuckoo::remove(unsigned char* digest, std::string URL, std::string ETag) {
         unsigned positionStart = 40 + h * fingerprintSize * BucketSize;
         unsigned positionEnd = positionStart + fingerprintSize * BucketSize;
         unsigned long fingerprintValue;
+        assert(ceil(positionStart / 8) <= digestSize);
         while (positionStart < positionEnd) {
             fingerprintValue = readFingerprint(digest, positionStart, fingerprintSize);
             if (fingerprintValue == destinationFingerprintValue) {
