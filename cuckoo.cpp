@@ -79,22 +79,21 @@ unsigned Cuckoo::add(std::string URL, std::string ETag) {
     unsigned long h1 = hash(keyStr, entries);
     // 6. Let `fingerprint` be the return value of {{fingerprint}} with `key` and `f` as inputs.
     unsigned long destinationFingerprintValue = fingerprint(keyStr, fingerprintSize);
-    char fingerprintString[20];
-    unsigned long h;
+    // 7. Let `h2` be the return value of {{hash2}} with `h1`, `fingerprint` and `N` as inputs.
     unsigned long h2 = alternateHash(h1, destinationFingerprintValue, entries);
-    // 9. Let `h` be either `h1` or `h2`, picked in random.
+    // 8. Let `h` be either `h1` or `h2`, picked in random.
     int randomNumber = rand() % 2;
-    h = (randomNumber != 0) ? h1 : h2;
+    unsigned long h = (randomNumber != 0) ? h1 : h2;
+    // 9. While `maxcount` is larger than zero:
     while (maxCount) {
-        // 10. Let `position_start` be 40 + `h` * `f` \* `b`.
+        // 1. Let `position_start` be 40 + `h` * `f` \* `b`.
         unsigned positionStart = 40 + h * fingerprintSize * BucketSize;
-        // 11. Let `position_end` be `position_start` + `f` \* `b`.
+        // 2. Let `position_end` be `position_start` + `f` \* `b`.
         unsigned positionEnd = positionStart + fingerprintSize * BucketSize;
         // Make sure we're not writing outside the table.
         assert(ceil(positionEnd / 8) <= digestSize);
         unsigned long fingerprintValue;
-        // 12. While `position_start` < `position_end`:
-        unsigned pos = 0;
+        // 3. While `position_start` < `position_end`:
         while (positionStart < positionEnd) {
             // 1. Let `bits` be `f` bits from `digest_value` starting at `position_start`.
             fingerprintValue = readFingerprint(digest, positionStart, fingerprintSize);
@@ -105,87 +104,26 @@ unsigned Cuckoo::add(std::string URL, std::string ETag) {
             }
             // 3. Add `f` to `position_start`.
             positionStart += fingerprintSize;
-            ++pos;
         }
-        // Randomize the fingerprint that gets kicked out
-        // 13. Let `e` be a random number from 0 to `b`.
+        // 4. Let `e` be a random number from 0 to `b`.
         int elementToThrow = rand() % BucketSize;
         unsigned positionStartBefore = positionStart;
-        // 14. Substract `f` * (`b` - `e`) from `position_start`.
+        // 5. Substract `f` * (`b` - `e`) from `position_start`.
         positionStart -= fingerprintSize * (BucketSize - elementToThrow);
-
-        // 15. Let `bits` be `f` bits from `digest_value` starting at `position_start`.
+        // 6. Let `bits` be `f` bits from `digest_value` starting at `position_start`.
+        // 7. Let `dest_fingerprint` be the value of bits, read as big endian.
         fingerprintValue = readFingerprint(digest, positionStart, fingerprintSize);
-        // 16. Set `bits` to `fingerprint`.
+        // 8. Set `bits` to `fingerprint`.
         writeFingerprint(digest, positionStart, fingerprintSize, destinationFingerprintValue);
-        // XXXX - need a destination fingerprint thing in the spec
         destinationFingerprintValue = fingerprintValue;
-        // 17. Let `h` be {{hash2}} with `h`, `fingerprint` and `N` as inputs.
+        // 9. Let `h` be {{hash2}} with `h`, `dest_fingerprint` and `N` as inputs.
         h = alternateHash(h, destinationFingerprintValue, entries);
-        // 16. Substract 1 from `maxcount`.
+        // 10. Substract 1 from `maxcount`.
         --maxCount;
-        // 17. If `maxcount` is zero, return an error.
-        // 18. Go to step 7.
     }
+    // 10. Return an error.
     printf("ERROR - maxcount reached\n");
     return 0;
-}
-
-// ### Querying the Digest for a Value {#querying}
-bool Cuckoo::query(std::string URL, std::string ETag) {
-    //Given the following inputs:
-    //
-    //* `URL` a string corresponding to the Effective Request URI ({{RFC7230}}, Section 5.5) of a cached
-    //response {{RFC7234}}.
-    //* `ETag` a string corresponding to the entity-tag {{RFC7232}} of a cached response {{RFC7234}} (if
-    //the ETag is available; otherwise, null).
-    //* `digest-value`, an array of bits.
-    const unsigned char* digest = m_digest;
-    size_t digestSize = m_digestSize;
-
-    // 1. Let `f` be the value of the first byte of `digest-value`.
-    unsigned fingerprintSize = digest[0];
-    // 3. Let `N` be the value of the second to fifth bytes of `digest-value` in big endian form.
-    unsigned long entries = bigEndianRead(digest, 1, 4);
-    // 4. Let `key` be the return value of {{key}} with `URL` and `ETag` as inputs.
-    std::string keyStr = key(URL, ETag);
-    // 5. Let `h1` be the return value of {{hash}} with `key` and `N` as inputs.
-    unsigned long h1 = hash(keyStr, entries);
-    // 6. Let `fingerprint` be the return value of {{fingerprint}} with `key` and `f` as inputs.
-    unsigned long destinationFingerprintValue = fingerprint(keyStr, fingerprintSize);
-    // 7. Let `fingerprint-string` be the value of `fingerprint` in base 10, expressed as a string.
-    char fingerprintString[20];
-    sprintf((char*)fingerprintString, "%lu", destinationFingerprintValue);
-    // 8. Let `h2` be the return value of {{hash}} with `fingerprint` and `N` as inputs, XORed with `h1`.
-    unsigned long h2 = hash(std::string(fingerprintString), entries) ^ h1;
-    unsigned long hashes[2];
-    // 9. Let `h` be `h1`.
-    hashes[0] = h1;
-    hashes[1] = h2;
-    for (int i = 0; i < 2; ++i) {
-        unsigned long h = hashes[i];
-        // 10. Let `position_start` be 40 + `h` \* `f` \* `b`.
-        unsigned positionStart = 40 + h * fingerprintSize * BucketSize;
-        // 11. Let `position_end` be `position_start` + `f` \* `b`.
-        unsigned positionEnd = positionStart + fingerprintSize * BucketSize;
-        unsigned long fingerprintValue;
-        // Make sure we're not reading beyond the table.
-        assert(ceil(positionStart / 8) <= digestSize);
-        // 12. While `position_start` < `position_end`:
-        while (positionStart < positionEnd) {
-            // 1. Let `bits` be `f` bits from `digest_value` starting at `position_start`.
-            fingerprintValue = readFingerprint(digest, positionStart, fingerprintSize);
-            // 2. If `bits` is `fingerprint`, return true
-            if (fingerprintValue == destinationFingerprintValue) {
-                return true;
-            }
-            // 3. Add `f` to `position_start`.
-            positionStart += fingerprintSize;
-        }
-        // 13. If `h` is not `h2`, set `h` to `h2` and return to step 10.
-    }
-    // 14. Return false.
-    return false;
 }
 
 // ### Removing a URL to the Digest-Value {#removing}
@@ -210,25 +148,23 @@ void Cuckoo::remove(std::string URL, std::string ETag) {
     unsigned long h1 = hash(keyStr, entries);
     // 6. Let `fingerprint` be the return value of {{fingerprint}} with `key` and `f` as inputs.
     unsigned long destinationFingerprintValue = fingerprint(keyStr, fingerprintSize);
-    // 7. Let `fingerprint-string` be the value of `fingerprint` in base 10, expressed as a string.
-    char fingerprintString[20];
-    sprintf((char*)fingerprintString, "%lu", destinationFingerprintValue);
-    // 8. Let `h2` be the return value of {{hash}} with `fingerprint-string` and `N` as inputs, XORed with `h1`.
-    unsigned long h2 = hash(std::string(fingerprintString), entries) ^ h1;
+    // 7. Let `h2` be the return value of {{hash2}} with `h1`, `fingerprint` and `N` as inputs.
+    unsigned long h2 = alternateHash(h1, destinationFingerprintValue, entries);
+    // 8. Let `hashes` be an array containing `h1` and `h2`.
     unsigned long hashes[2];
-    // 9. Let `h` be `h1`.
     hashes[0] = h1;
     hashes[1] = h2;
+    // 9. For each `h` in `hashes`:
     for (int i = 0; i < 2; ++i) {
         unsigned long h = hashes[i];
-        // 10. Let `position_start` be 40 + `h` \* `f` \* `b`.
+        // 1. Let `position_start` be 40 + `h` \* `f` \* `b`.
         unsigned positionStart = 40 + h * fingerprintSize * BucketSize;
-        // 11. Let `position_end` be `position_start` + `f` \* `b`.
+        // 2. Let `position_end` be `position_start` + `f` \* `b`.
         unsigned positionEnd = positionStart + fingerprintSize * BucketSize;
         unsigned long fingerprintValue;
         // Make sure we're not reading outside the table.
         assert(ceil(positionStart / 8) <= digestSize);
-        // 12. While `position_start` < `position_end`:
+        // 3. While `position_start` < `position_end`:
         while (positionStart < positionEnd) {
             // 1. Let `bits` be `f` bits from `digest_value` starting at `position_start`.
             fingerprintValue = readFingerprint(digest, positionStart, fingerprintSize);
@@ -240,9 +176,63 @@ void Cuckoo::remove(std::string URL, std::string ETag) {
             // 3. Add `f` to `position_start`.
             positionStart += fingerprintSize;
         }
-        // 13. If `h` is not `h2`, set `h` to `h2` and return to step 10.
     }
 }
+
+// ### Querying the Digest for a Value {#querying}
+bool Cuckoo::query(std::string URL, std::string ETag) {
+    //Given the following inputs:
+    //
+    //* `URL` a string corresponding to the Effective Request URI ({{RFC7230}}, Section 5.5) of a cached
+    //response {{RFC7234}}.
+    //* `ETag` a string corresponding to the entity-tag {{RFC7232}} of a cached response {{RFC7234}} (if
+    //the ETag is available; otherwise, null).
+    //* `digest-value`, an array of bits.
+    const unsigned char* digest = m_digest;
+    size_t digestSize = m_digestSize;
+
+    // 1. Let `f` be the value of the first byte of `digest-value`.
+    unsigned fingerprintSize = digest[0];
+    // 3. Let `N` be the value of the second to fifth bytes of `digest-value` in big endian form.
+    unsigned long entries = bigEndianRead(digest, 1, 4);
+    // 4. Let `key` be the return value of {{key}} with `URL` and `ETag` as inputs.
+    std::string keyStr = key(URL, ETag);
+    // 5. Let `h1` be the return value of {{hash}} with `key` and `N` as inputs.
+    unsigned long h1 = hash(keyStr, entries);
+    // 6. Let `fingerprint` be the return value of {{fingerprint}} with `key` and `f` as inputs.
+    unsigned long destinationFingerprintValue = fingerprint(keyStr, fingerprintSize);
+    // 7. Let `h2` be the return value of {{hash2}} with `h1`, `fingerprint` and `N` as inputs.
+    unsigned long h2 = alternateHash(h1, destinationFingerprintValue, entries);
+    // 8. Let `hashes` be an array containing `h1` and `h2`.
+    unsigned long hashes[2];
+    hashes[0] = h1;
+    hashes[1] = h2;
+    // 9. For each `h` in `hashes`:
+    for (int i = 0; i < 2; ++i) {
+        unsigned long h = hashes[i];
+        // 1. Let `position_start` be 40 + `h` \* `f` \* `b`.
+        unsigned positionStart = 40 + h * fingerprintSize * BucketSize;
+        // 2. Let `position_end` be `position_start` + `f` \* `b`.
+        unsigned positionEnd = positionStart + fingerprintSize * BucketSize;
+        unsigned long fingerprintValue;
+        // Make sure we're not reading beyond the table.
+        assert(ceil(positionStart / 8) <= digestSize);
+        // 3. While `position_start` < `position_end`:
+        while (positionStart < positionEnd) {
+            // 1. Let `bits` be `f` bits from `digest_value` starting at `position_start`.
+            fingerprintValue = readFingerprint(digest, positionStart, fingerprintSize);
+            // 2. If `bits` is `fingerprint`, return true
+            if (fingerprintValue == destinationFingerprintValue) {
+                return true;
+            }
+            // 3. Add `f` to `position_start`.
+            positionStart += fingerprintSize;
+        }
+    }
+    // 14. Return false.
+    return false;
+}
+
 
 // ### Computing the key {#key}
 std::string Cuckoo::key(std::string URL, std::string ETag) {
@@ -283,7 +273,6 @@ unsigned Cuckoo::hash(std::string key, unsigned entries) {
 
 // ### Computing an Alternative Hash Value {#hash2}
 unsigned Cuckoo::alternateHash(unsigned hash1, unsigned long fingerprintValue, unsigned entries) {
-    // XXXXXXXX - need to move to spec
     // Given the following inputs:
     //
     // * `hash1`, an integer indicating the previous hash
@@ -292,11 +281,12 @@ unsigned Cuckoo::alternateHash(unsigned hash1, unsigned long fingerprintValue, u
 
     // Note: This is not thread safe (but a bit faster)!!!
     static char fingerprintString[20];
-    // 7. Let `fingerprint-string` be the value of `fingerprint` in base 10, expressed as a string.
+    // 1. Let `fingerprint-string` be the value of `fingerprint` in base 10, expressed as a string.
     sprintf((char*)fingerprintString, "%lu", fingerprintValue);
-    // 8. Let `h2` be the return value of {{hash}} with `fingerprint-string` and `N` as inputs, XORed with `h1`.
+    // 2. Let `h2` be the return value of {{hash}} with `fingerprint-string` and `N` as inputs, XORed with `h1`.
     unsigned long hash2 = hash(std::string(fingerprintString), entries);
     hash2 ^= hash1;
+    // 3. Return `hash2`.
     return hash2;
 }
 
