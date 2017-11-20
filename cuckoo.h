@@ -36,6 +36,7 @@ private:
 
     static unsigned long fingerprint(std::string key, unsigned fingerprintSize);
     static unsigned hash(std::string key, unsigned entries);
+    static unsigned alternateHash(unsigned hash1, unsigned long fingerprintValue, unsigned entries);
     static std::string key(std::string URL, std::string ETag);
     static void bigEndianWrite(unsigned char* digest, unsigned startPosition, size_t length, unsigned long number);
     static unsigned long bigEndianRead(const unsigned char* digest, unsigned startPosition, size_t length);

@@ -81,20 +81,11 @@ unsigned Cuckoo::add(std::string URL, std::string ETag) {
     unsigned long destinationFingerprintValue = fingerprint(keyStr, fingerprintSize);
     char fingerprintString[20];
     unsigned long h;
+    unsigned long h2 = alternateHash(h1, destinationFingerprintValue, entries);
+    // 9. Let `h` be either `h1` or `h2`, picked in random.
+    int randomNumber = rand() % 2;
+    h = (randomNumber != 0) ? h1 : h2;
     while (maxCount) {
-        // 7. Let `fingerprint-string` be the value of `fingerprint` in base 10, expressed as a string.
-        sprintf((char*)fingerprintString, "%lu", destinationFingerprintValue);
-        // 8. Let `h2` be the return value of {{hash}} with `fingerprint-string` and `N` as inputs, XORed with `h1`.
-        unsigned long h2 = hash(std::string(fingerprintString), entries);
-        h2 ^= h1;
-        if (h != h1) {
-        // 9. Let `h` be either `h1` or `h2`, picked in random.
-        int randomNumber = rand() % 2;
-        h = (randomNumber != 0) ? h1 : h2;
-        }
-        else {
-h = h2;
-        }
         // 10. Let `position_start` be 40 + `h` * `f` \* `b`.
         unsigned positionStart = 40 + h * fingerprintSize * BucketSize;
         // 11. Let `position_end` be `position_start` + `f` \* `b`.
@@ -117,18 +108,20 @@ h = h2;
             ++pos;
         }
         // Randomize the fingerprint that gets kicked out
+        // 13. Let `e` be a random number from 0 to `b`.
         int elementToThrow = rand() % BucketSize;
         unsigned positionStartBefore = positionStart;
+        // 14. Substract `f` * (`b` - `e`) from `position_start`.
         positionStart -= fingerprintSize * (BucketSize - elementToThrow);
-        fingerprintValue = readFingerprint(digest, positionStart, fingerprintSize);
 
-        // 13. Substract `f` from `position_start`.
-        //positionStart -= fingerprintSize;
-        // 14. Let `fingerprint` be the `f` bits starting at `position_start`.
+        // 15. Let `bits` be `f` bits from `digest_value` starting at `position_start`.
+        fingerprintValue = readFingerprint(digest, positionStart, fingerprintSize);
+        // 16. Set `bits` to `fingerprint`.
         writeFingerprint(digest, positionStart, fingerprintSize, destinationFingerprintValue);
+        // XXXX - need a destination fingerprint thing in the spec
         destinationFingerprintValue = fingerprintValue;
-        // 15. Let `h1` be `h`
-        h1 = h;
+        // 17. Let `h` be {{hash2}} with `h`, `fingerprint` and `N` as inputs.
+        h = alternateHash(h, destinationFingerprintValue, entries);
         // 16. Substract 1 from `maxcount`.
         --maxCount;
         // 17. If `maxcount` is zero, return an error.
@@ -286,6 +279,25 @@ unsigned Cuckoo::hash(std::string key, unsigned entries) {
     unsigned long hashValue = bigEndianRead((const unsigned char *)hash, SHA256_DIGEST_LENGTH - 4, 4);
     // 2. Return `hash-value` modulo N.
     return hashValue % entries;
+}
+
+// ### Computing an Alternative Hash Value {#hash2}
+unsigned Cuckoo::alternateHash(unsigned hash1, unsigned long fingerprintValue, unsigned entries) {
+    // XXXXXXXX - need to move to spec
+    // Given the following inputs:
+    //
+    // * `hash1`, an integer indicating the previous hash
+    // * `fingerprint`, an integer indicating the fingerprint value
+    // * `N`, an integer indicating the number of entries in the digest
+
+    // Note: This is not thread safe (but a bit faster)!!!
+    static char fingerprintString[20];
+    // 7. Let `fingerprint-string` be the value of `fingerprint` in base 10, expressed as a string.
+    sprintf((char*)fingerprintString, "%lu", fingerprintValue);
+    // 8. Let `h2` be the return value of {{hash}} with `fingerprint-string` and `N` as inputs, XORed with `h1`.
+    unsigned long hash2 = hash(std::string(fingerprintString), entries);
+    hash2 ^= hash1;
+    return hash2;
 }
 
 // ### Computing a fingerprint value {#fingerprint}
