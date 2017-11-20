@@ -77,9 +77,9 @@ unsigned Cuckoo::add(std::string URL, std::string ETag) {
     std::string keyStr = key(URL, ETag);
     // 5. Let `h1` be the return value of {{hash}} with `key` and `N` as inputs.
     unsigned long h1 = hash(keyStr, entries);
-    // 6. Let `fingerprint` be the return value of {{fingerprint}} with `key` and `f` as inputs.
+    // 6. Let `dest_fingerprint` be the return value of {{fingerprint}} with `key` and `f` as inputs.
     unsigned long destinationFingerprintValue = fingerprint(keyStr, fingerprintSize);
-    // 7. Let `h2` be the return value of {{hash2}} with `h1`, `fingerprint` and `N` as inputs.
+    // 7. Let `h2` be the return value of {{hash2}} with `h1`, `dest_fingerprint` and `N` as inputs.
     unsigned long h2 = alternateHash(h1, destinationFingerprintValue, entries);
     // 8. Let `h` be either `h1` or `h2`, picked in random.
     int randomNumber = rand() % 2;
@@ -97,7 +97,7 @@ unsigned Cuckoo::add(std::string URL, std::string ETag) {
         while (positionStart < positionEnd) {
             // 1. Let `bits` be `f` bits from `digest_value` starting at `position_start`.
             fingerprintValue = readFingerprint(digest, positionStart, fingerprintSize);
-            // 2. If `bits` is all zeros, set `bits` to `fingerprint` and terminate these steps.
+            // 2. If `bits` is all zeros, set `bits` to `dest_fingerprint` and terminate these steps.
             if (fingerprintValue == 0) {
                 writeFingerprint(digest, positionStart, fingerprintSize, destinationFingerprintValue);
                 return maxCount;
@@ -111,14 +111,15 @@ unsigned Cuckoo::add(std::string URL, std::string ETag) {
         // 5. Substract `f` * (`b` - `e`) from `position_start`.
         positionStart -= fingerprintSize * (BucketSize - elementToThrow);
         // 6. Let `bits` be `f` bits from `digest_value` starting at `position_start`.
-        // 7. Let `dest_fingerprint` be the value of bits, read as big endian.
+        // 7. Let `fingerprint` be the value of bits, read as big endian.
         fingerprintValue = readFingerprint(digest, positionStart, fingerprintSize);
-        // 8. Set `bits` to `fingerprint`.
+        // 8. Set `bits` to `dest_fingerprint`.
         writeFingerprint(digest, positionStart, fingerprintSize, destinationFingerprintValue);
+        // 9. Set `dest_fingerprint` to `fingerprint`.
         destinationFingerprintValue = fingerprintValue;
-        // 9. Let `h` be {{hash2}} with `h`, `dest_fingerprint` and `N` as inputs.
+        // 10. Let `h` be {{hash2}} with `h`, `dest_fingerprint` and `N` as inputs.
         h = alternateHash(h, destinationFingerprintValue, entries);
-        // 10. Substract 1 from `maxcount`.
+        // 11. Substract 1 from `maxcount`.
         --maxCount;
     }
     // 10. Return an error.
