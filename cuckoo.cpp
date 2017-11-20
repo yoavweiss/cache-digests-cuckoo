@@ -80,15 +80,21 @@ unsigned Cuckoo::add(std::string URL, std::string ETag) {
     // 6. Let `fingerprint` be the return value of {{fingerprint}} with `key` and `f` as inputs.
     unsigned long destinationFingerprintValue = fingerprint(keyStr, fingerprintSize);
     char fingerprintString[20];
+    unsigned long h;
     while (maxCount) {
         // 7. Let `fingerprint-string` be the value of `fingerprint` in base 10, expressed as a string.
         sprintf((char*)fingerprintString, "%lu", destinationFingerprintValue);
         // 8. Let `h2` be the return value of {{hash}} with `fingerprint-string` and `N` as inputs, XORed with `h1`.
         unsigned long h2 = hash(std::string(fingerprintString), entries);
         h2 ^= h1;
+        if (h != h1) {
         // 9. Let `h` be either `h1` or `h2`, picked in random.
         int randomNumber = rand() % 2;
-        unsigned long h = (randomNumber != 0) ? h1 : h2;
+        h = (randomNumber != 0) ? h1 : h2;
+        }
+        else {
+h = h2;
+        }
         // 10. Let `position_start` be 40 + `h` * `f` \* `b`.
         unsigned positionStart = 40 + h * fingerprintSize * BucketSize;
         // 11. Let `position_end` be `position_start` + `f` \* `b`.
@@ -97,6 +103,7 @@ unsigned Cuckoo::add(std::string URL, std::string ETag) {
         assert(ceil(positionEnd / 8) <= digestSize);
         unsigned long fingerprintValue;
         // 12. While `position_start` < `position_end`:
+        unsigned pos = 0;
         while (positionStart < positionEnd) {
             // 1. Let `bits` be `f` bits from `digest_value` starting at `position_start`.
             fingerprintValue = readFingerprint(digest, positionStart, fingerprintSize);
@@ -107,9 +114,16 @@ unsigned Cuckoo::add(std::string URL, std::string ETag) {
             }
             // 3. Add `f` to `position_start`.
             positionStart += fingerprintSize;
+            ++pos;
         }
+        // Randomize the fingerprint that gets kicked out
+        int elementToThrow = rand() % BucketSize;
+        unsigned positionStartBefore = positionStart;
+        positionStart -= fingerprintSize * (BucketSize - elementToThrow);
+        fingerprintValue = readFingerprint(digest, positionStart, fingerprintSize);
+
         // 13. Substract `f` from `position_start`.
-        positionStart -= fingerprintSize;
+        //positionStart -= fingerprintSize;
         // 14. Let `fingerprint` be the `f` bits starting at `position_start`.
         writeFingerprint(digest, positionStart, fingerprintSize, destinationFingerprintValue);
         destinationFingerprintValue = fingerprintValue;
